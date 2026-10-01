@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>One Value</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#2E7D5B">
+<style>
+  :root {
+    --bg: #E9EFEA;
+    --surface: #F6F9F6;
+    --ink: #1F2D27;
+    --muted: #5F7068;
+    --line: #C9D4CC;
+    --accent: #2E7D5B;
+    --accent-ink: #F2F7F3;
+    --danger: #A6402F;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131A16;
+      --surface: #1B2420;
+      --ink: #E4ECE6;
+      --muted: #93A59B;
+      --line: #2F3D36;
+      --accent: #5FC294;
+      --accent-ink: #0F1F17;
+      --danger: #E08A78;
+    }
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 1rem/1.5 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main {
+    max-width: 30rem;
+    min-height: 100%;
+    margin: 0 auto;
+    padding: 1.5rem 1.25rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  header h1 { font-size: 1rem; font-weight: 600; margin: 0; }
+  .status { font-size: 0.875rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+  .status::before {
+    content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%;
+    background: var(--line);
+  }
+  .status[data-state="ok"]::before { background: var(--accent); }
+  .status[data-state="busy"]::before { background: var(--muted); animation: pulse 1s infinite alternate; }
+  .status[data-state="error"]::before { background: var(--danger); }
+  @keyframes pulse { to { opacity: 0.3; } }
+
+  .value {
+    font-size: clamp(2.5rem, 12vw, 4rem);
+    line-height: 1.05;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .value.empty { color: var(--muted); font-weight: 500; }
+  .meta { color: var(--muted); margin: 0.75rem 0 0; font-size: 0.9375rem; }
+
+  form { display: flex; flex-direction: column; gap: 0.75rem; }
+  label { font-size: 0.9375rem; color: var(--muted); }
+  input {
+    font: inherit; font-size: 1.125rem;
+    padding: 0.85rem 1rem;
+    border: 1.5px solid var(--line); border-radius: 0.75rem;
+    background: var(--surface); color: var(--ink);
+    width: 100%;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    font: inherit; font-weight: 600;
+    padding: 0.85rem 1.25rem;
+    border-radius: 0.75rem; border: none;
+    background: var(--accent); color: var(--accent-ink);
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.quiet {
+    background: none; color: var(--muted); padding: 0.5rem 0;
+    font-weight: 500; text-decoration: underline; text-underline-offset: 0.2em;
+  }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 1.5rem; }
+  .note { color: var(--muted); font-size: 0.9375rem; margin: 0; }
+  .error { color: var(--danger); font-size: 0.9375rem; margin: 0; }
+  [hidden] { display: none !important; }
+  footer { margin-top: auto; }
+  @media (prefers-reduced-motion: reduce) { .status::before { animation: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>One Value</h1>
+    <span class="status" id="status" data-state="idle">Not connected</span>
+  </header>
+
+  <!-- Shown before Dropbox is connected -->
+  <section id="connectView" hidden>
+    <p class="value empty">Connect Dropbox to start</p>
+    <p class="meta">Your value is saved as a small file in an app folder in your own Dropbox, so every device you connect sees the same thing.</p>
+    <p style="margin-top:1.5rem"><button id="connectBtn">Connect Dropbox</button></p>
+    <p class="error" id="configError" hidden>Add your Dropbox app key to DROPBOX_APP_KEY in index.html first.</p>
+  </section>
+
+  <!-- Shown once connected -->
+  <section id="appView" hidden>
+    <div>
+      <p class="value empty" id="valueOut">Nothing saved yet</p>
+      <p class="meta" id="metaOut"></p>
+    </div>
+  </section>
+
+  <form id="saveForm" hidden>
+    <label for="valueIn">New value</label>
+    <input id="valueIn" autocomplete="off" placeholder="Type anything">
+    <button type="submit" id="saveBtn">Save</button>
+  </form>
+
+  <p class="error" id="errorOut" hidden></p>
+
+  <footer id="footer" hidden>
+    <div class="row">
+      <button class="quiet" id="refreshBtn">Refresh</button>
+      <button class="quiet" id="disconnectBtn">Disconnect</button>
+    </div>
+  </footer>
+</main>
+
+<script>
+// ─── Setup ──────────────────────────────────────────────────────────────
+// Paste the App key from your Dropbox app's Settings page here.
+const DROPBOX_APP_KEY = "YOUR_DROPBOX_APP_KEY";
+// ────────────────────────────────────────────────────────────────────────
+
+const FILE_PATH = "/value.json"; // relative to the app folder in Dropbox
+const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/, "");
+const TOKEN_KEY = "onevalue.tokens";
+const PKCE_KEY = "onevalue.pkce";
+
+const $ = (id) => document.getElementById(id);
+
+// ── Storage helpers (localStorage is shared between Chrome and its installed PWAs)
+function load(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
+function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+function forget(key) { try { localStorage.removeItem(key); } catch {} }
+
+// ── PKCE helpers
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function randomString(n = 64) {
+  const a = new Uint8Array(n); crypto.getRandomValues(a); return base64url(a);
+}
+async function sha256(text) {
+  return crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+}
+
+// ── OAuth
+async function startLogin() {
+  const verifier = randomString(64);
+  const state = randomString(16);
+  store(PKCE_KEY, { verifier, state });
+  const params = new URLSearchParams({
+    client_id: DROPBOX_APP_KEY,
+    response_type: "code",
+    code_challenge: base64url(await sha256(verifier)),
+    code_challenge_method: "S256",
+    redirect_uri: REDIRECT_URI,
+    token_access_type: "offline", // gives a refresh token so you stay signed in
+    state,
+  });
+  location.href = "https://www.dropbox.com/oauth2/authorize?" + params;
+}
+
+async function handleRedirect() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("code") && !q.has("error")) return;
+  history.replaceState(null, "", REDIRECT_URI); // clean the URL
+
+  if (q.has("error")) throw new Error("Dropbox sign-in was cancelled or failed: " + (q.get("error_description") || q.get("error")));
+  const pkce = load(PKCE_KEY);
+  forget(PKCE_KEY);
+  if (!pkce || pkce.state !== q.get("state")) throw new Error("Sign-in couldn't be verified. Tap Connect Dropbox to try again.");
+
+  const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    method: "POST",
+    body: new URLSearchParams({
+      code: q.get("code"),
+      grant_type: "authorization_code",
+      code_verifier: pkce.verifier,
+      client_id: DROPBOX_APP_KEY,
+      redirect_uri: REDIRECT_URI,
+    }),
+  });
+  if (!res.ok) throw new Error("Dropbox rejected the sign-in (" + res.status + "). Check that the redirect URI in your Dropbox app is exactly " + REDIRECT_URI);
+  saveTokens(await res.json());
+}
+
+function saveTokens(t) {
+  const prev = load(TOKEN_KEY) || {};
+  store(TOKEN_KEY, {
+    access_token: t.access_token,
+    refresh_token: t.refresh_token || prev.refresh_token,
+    expires_at: Date.now() + (t.expires_in || 14400) * 1000,
+  });
+}
+
+async function getAccessToken() {
+  const t = load(TOKEN_KEY);
+  if (!t) return null;
+  if (t.access_token && t.expires_at > Date.now() + 60_000) return t.access_token;
+  if (!t.refresh_token) return null;
+  const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    method: "POST",
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: t.refresh_token, client_id: DROPBOX_APP_KEY }),
+  });
+  if (!res.ok) { forget(TOKEN_KEY); return null; }
+  saveTokens(await res.json());
+  return load(TOKEN_KEY).access_token;
+}
+
+// ── Dropbox file read/write
+async function readValue() {
+  const token = await getAccessToken();
+  if (!token) throw new Error("signed-out");
+  const res = await fetch("https://content.dropboxapi.com/2/files/download", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Dropbox-API-Arg": JSON.stringify({ path: FILE_PATH }) },
+  });
+  if (res.status === 409) return null; // file doesn't exist yet
+  if (res.status === 401) { forget(TOKEN_KEY); throw new Error("signed-out"); }
+  if (!res.ok) throw new Error("Couldn't read from Dropbox (" + res.status + ").");
+  return res.json();
+}
+
+async function writeValue(data) {
+  const token = await getAccessToken();
+  if (!token) throw new Error("signed-out");
+  const res = await fetch("https://content.dropboxapi.com/2/files/upload", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + token,
+      "Content-Type": "application/octet-stream",
+      "Dropbox-API-Arg": JSON.stringify({ path: FILE_PATH, mode: "overwrite", mute: true }),
+    },
+    body: JSON.stringify(data),
+  });
+  if (res.status === 401) { forget(TOKEN_KEY); throw new Error("signed-out"); }
+  if (!res.ok) throw new Error("Couldn't save to Dropbox (" + res.status + ").");
+}
+
+// ── UI
+function deviceName() {
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return "Android";
+  if (/iPhone|iPad/i.test(ua)) return "iPhone or iPad";
+  if (/Macintosh/i.test(ua)) return "Mac";
+  if (/Windows/i.test(ua)) return "Windows";
+  return "another device";
+}
+
+function timeAgo(iso) {
+  const s = Math.round((Date.now() - new Date(iso)) / 1000);
+  if (s < 45) return "just now";
+  const units = [["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [u, n] of units) if (s >= n) {
+    const v = Math.round(s / n); return v + " " + u + (v === 1 ? "" : "s") + " ago";
+  }
+  return "just now";
+}
+
+function setStatus(text, state) { const el = $("status"); el.textContent = text; el.dataset.state = state; }
+function showError(msg) { const e = $("errorOut"); e.textContent = msg || ""; e.hidden = !msg; }
+
+function showConnected(connected) {
+  $("connectView").hidden = connected;
+  $("appView").hidden = !connected;
+  $("saveForm").hidden = !connected;
+  $("footer").hidden = !connected;
+  if (!connected) setStatus("Not connected", "idle");
+}
+
+function render(data) {
+  const out = $("valueOut");
+  if (data && data.value !== undefined && data.value !== "") {
+    out.textContent = data.value;
+    out.classList.remove("empty");
+    $("metaOut").textContent = "Saved from " + (data.device || "a device") + ", " + timeAgo(data.savedAt);
+  } else {
+    out.textContent = "Nothing saved yet";
+    out.classList.add("empty");
+    $("metaOut").textContent = "Type a value below and save it. Then open this app on your other device.";
+  }
+}
+
+let lastData = null;
+
+async function refresh() {
+  setStatus("Syncing", "busy");
+  try {
+    lastData = await readValue();
+    render(lastData);
+    setStatus("In sync", "ok");
+    showError("");
+  } catch (e) {
+    handleFailure(e);
+  }
+}
+
+function handleFailure(e) {
+  if (e.message === "signed-out") { showConnected(false); return; }
+  setStatus(navigator.onLine ? "Sync failed" : "Offline", "error");
+  showError(navigator.onLine ? e.message : "You're offline. Connect to the internet to sync.");
+}
+
+$("saveForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const value = $("valueIn").value.trim();
+  if (!value) return;
+  const data = { value, savedAt: new Date().toISOString(), device: deviceName() };
+  $("saveBtn").disabled = true;
+  setStatus("Saving", "busy");
+  try {
+    await writeValue(data);
+    lastData = data;
+    render(data);
+    $("valueIn").value = "";
+    setStatus("Saved", "ok");
+    showError("");
+  } catch (e) {
+    handleFailure(e);
+  } finally {
+    $("saveBtn").disabled = false;
+  }
+});
+
+$("connectBtn").addEventListener("click", () => {
+  if (DROPBOX_APP_KEY.startsWith("YOUR_")) { $("configError").hidden = false; return; }
+  startLogin();
+});
+$("refreshBtn").addEventListener("click", refresh);
+$("disconnectBtn").addEventListener("click", () => { forget(TOKEN_KEY); showConnected(false); showError(""); });
+
+// Re-sync whenever you come back to the app or regain a connection.
+document.addEventListener("visibilitychange", () => { if (!document.hidden && load(TOKEN_KEY)) refresh(); });
+window.addEventListener("online", () => { if (load(TOKEN_KEY)) refresh(); });
+// Keep the "x minutes ago" text current.
+setInterval(() => { if (lastData) render(lastData); }, 30_000);
+
+(async function init() {
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  try {
+    await handleRedirect();
+  } catch (e) {
+    showConnected(false);
+    showError(e.message);
+    return;
+  }
+  if (load(TOKEN_KEY)) { showConnected(true); refresh(); }
+  else showConnected(false);
+})();
+</script>
+</body>
+</html>
